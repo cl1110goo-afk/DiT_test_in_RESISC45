@@ -1,13 +1,26 @@
-name: DiT
+name: dit_training_in_RESISC45
 channels:
   - pytorch
   - nvidia
+  - conda-forge
+  - defaults
 dependencies:
-  - python >= 3.8
-  - pytorch >= 1.13
-  - torchvision
-  - pytorch-cuda=11.7
+  - python=3.8.5
+  - pip
+  - cudatoolkit=11.7
   - pip:
-    - timm
-    - diffusers
-    - accelerate
+    - torch==1.13.1
+    - torchvision==0.14.1
+    - timm==1.0.24
+    - clip @ git+https://github.com/openai/CLIP.git
+    - einops==0.3.0
+    - accelerate==0.16.0
+    - transformers==4.26.1
+    - scipy==1.9.1
+    - torch-fidelity==0.3.0
+    - tqdm
+    - numpy==1.23.5
+    - pillow
+    - pyyaml
+    - ftfy
+    - regex

@@ -14,6 +14,11 @@ Unlike standard image synthesis (e.g., ImageNet), generating remote sensing and 
 * **Architecture Adaptation:** Adapted the state-of-the-art generative AI architecture to handle the specific latent features of large-scale geographical images.
 * **Environment & Training Loop:** Configured a local training environment with a managed training loop optimized for testing generative capabilities on structural datasets.
 
+## 💻 System Requirements & Compatibility
+
+* **Operating System:** Currently, the distributed training script (`train_ddp_cached.py`) is optimized for **Linux** or **Windows Subsystem for Linux (WSL2)**. It strictly relies on the NVIDIA `nccl` backend to achieve highly efficient multi-GPU communication.
+* **Windows Native Support:** Native Windows support (which requires switching the distributed backend to `gloo` and modifying the initialization) is on the development roadmap and will be adapted in future updates. For now, Windows users are strongly encouraged to run the training loop within a WSL2 environment.
+
 ## ⚙️ Setup
 
 First, download and set up the repo:
@@ -27,7 +32,7 @@ We provide an `environment.yml` file that can be used to create a Conda environm
 
 ```bash
 conda env create -f environment.yml
-conda activate DiT
+conda activate dit_training_in_RESISC45
 ```
 
 ## 🚀 Training on NWPU-RESISC45

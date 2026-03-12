@@ -32,21 +32,21 @@ conda activate DiT
 
 ## 🚀 Training on NWPU-RESISC45
 
-We provide a modified training script in `train.py`. This script integrates the custom dataloaders for the remote sensing dataset. To launch training with `N` GPUs on one node:
+We provide a modified training script in `train_ddp_cached.py`. This script integrates the custom dataloaders for the remote sensing dataset. To launch training with `N` GPUs on one node:
 
 ```bash
-torchrun --nnodes=1 --nproc_per_node=N train.py --model DiT-XL/2 --data-path /path/to/NWPU-RESISC45
+torchrun --nnodes=1 --nproc_per_node=N train_ddp_cached.py --model DiT-XL/2 --data-path /path/to/NWPU-RESISC45
 ```
 *Note: Ensure your `--data-path` points to the correctly formatted directory of the NWPU-RESISC45 dataset.*
 
 ## 🖼️ Sampling
 
-You can sample from your fine-tuned custom DiT models using the `sample.py` script. Simply use the `--ckpt` argument to point to your saved weights. 
+You can sample from your fine-tuned custom DiT models using the `sample_ddp_custom.py` script. Simply use the `--ckpt` argument to point to your saved weights. 
 
 For example, to sample from the EMA weights of your custom 256x256 model, run:
 
 ```bash
-python sample.py --model DiT-XL/2 --image-size 256 --ckpt /path/to/your/custom_model.pt
+python sample_ddp_custom.py --model DiT-XL/2 --image-size 256 --ckpt /path/to/your/custom_model.pt
 ```
 
 ## 🙏 Acknowledgments

@@ -1,6 +1,3 @@
-# sample_ddp_custom.py
-# 专为你训练的 DiT 修改的采样脚本
-
 import torch
 import torch.distributed as dist
 from models import DiT_models
@@ -38,7 +35,7 @@ def main(args):
     assert torch.cuda.is_available(), "Sampling with DDP requires at least one GPU."
     torch.set_grad_enabled(False)
 
-    # Setup DDP:
+    # Setup DDP
     dist.init_process_group("nccl")
     rank = dist.get_rank()
     device = rank % torch.cuda.device_count()
@@ -47,27 +44,26 @@ def main(args):
     torch.cuda.set_device(device)
     print(f"Starting rank={rank}, seed={seed}, world_size={dist.get_world_size()}.")
 
-    # Load model:
+    # Load model
     latent_size = args.image_size // 8
     model = DiT_models[args.model](
         input_size=latent_size,
         num_classes=args.num_classes
     ).to(device)
 
-    # 🔥 修改点 1: 正确加载你的 Checkpoint (优先加载 EMA)
-    print(f"🚀 Loading checkpoint: {args.ckpt}")
+    # Load checkpoint and prioritize EMA weights
+    print(f"Loading checkpoint: {args.ckpt}")
     checkpoint = torch.load(args.ckpt, map_location=lambda storage, loc: storage)
     
     if "ema" in checkpoint:
-        print("✅ Found EMA weights, loading EMA...")
+        print("Found EMA weights, loading EMA...")
         state_dict = checkpoint["ema"]
     elif "model" in checkpoint:
-        print("⚠️ No EMA found, loading standard model weights...")
+        print("No EMA found, loading standard model weights...")
         state_dict = checkpoint["model"]
     else:
         state_dict = checkpoint
 
-    # 处理一下可能的 key 不匹配问题
     model.load_state_dict(state_dict, strict=False)
     model.eval() 
     
@@ -76,11 +72,12 @@ def main(args):
     
     using_cfg = args.cfg_scale > 1.0
 
-    # Create folder to save samples:
+    # Create folder to save samples
     model_string_name = args.model.replace("/", "-")
     ckpt_string_name = os.path.basename(args.ckpt).replace(".pt", "") if args.ckpt else "pretrained"
-    folder_name = f"{model_string_name}-{ckpt_string_name}-size-{args.image_size}-cfg-{args.cfg_scale}-seed-{args.global_seed}"
+    folder_name = f"{model_string_name}-{ckpt_string_name}-size-{args.image_size}-cfg-{args.cfg_scale}-class-{args.target_class_id}-seed-{args.global_seed}"
     sample_folder_dir = f"{args.sample_dir}/{folder_name}"
+    
     if rank == 0:
         os.makedirs(sample_folder_dir, exist_ok=True)
         print(f"Saving .png samples at {sample_folder_dir}")
@@ -100,21 +97,16 @@ def main(args):
     total = 0
     
     for _ in pbar:
-        # Sample inputs:
+        # Sample inputs
         z = torch.randn(n, model.in_channels, latent_size, latent_size, device=device)
         
-        # 🔥🔥🔥 修改开始 🔥🔥🔥
-        # 原来的代码是随机生成：y = torch.randint(...)
-        # 现在改成强制指定：
-        
-        target_class_id = 39  # 👈 这里填 0 就是飞机。填 39 就是体育馆。想看啥改这就行！
+        # Specify the target class for conditional generation
+        target_class_id = args.target_class_id
         y = torch.tensor([target_class_id] * n, device=device)
-        # 🔥🔥🔥 修改结束 🔥🔥🔥
 
-        # Setup classifier-free guidance:
+        # Setup classifier-free guidance
         if using_cfg:
             z = torch.cat([z, z], 0)
-            # 这里的 Null Label 保持 args.num_classes (45) 不变
             y_null = torch.tensor([args.num_classes] * n, device=device)
             y = torch.cat([y, y_null], 0)
             model_kwargs = dict(y=y, cfg_scale=args.cfg_scale)
@@ -123,10 +115,11 @@ def main(args):
             model_kwargs = dict(y=y)
             sample_fn = model.forward
 
-        # Sample images:
+        # Sample images
         samples = diffusion.p_sample_loop(
             sample_fn, z.shape, z, clip_denoised=False, model_kwargs=model_kwargs, progress=False, device=device
         )
+        
         if using_cfg:
             samples, _ = samples.chunk(2, dim=0) 
 
@@ -151,14 +144,15 @@ if __name__ == "__main__":
     parser.add_argument("--model", type=str, choices=list(DiT_models.keys()), default="DiT-XL/2")
     parser.add_argument("--vae",  type=str, choices=["ema", "mse"], default="ema")
     parser.add_argument("--sample-dir", type=str, default="samples")
-    parser.add_argument("--per-proc-batch-size", type=int, default=16) # 显存如果够大可以改大
-    parser.add_argument("--num-fid-samples", type=int, default=2) # 只生成 100 张看看效果
+    parser.add_argument("--per-proc-batch-size", type=int, default=16)
+    parser.add_argument("--num-fid-samples", type=int, default=2) 
     parser.add_argument("--image-size", type=int, choices=[256, 512], default=256)
-    parser.add_argument("--num-classes", type=int, default=45) # 🔥 默认为 45
-    parser.add_argument("--cfg-scale",  type=float, default=1.5) # 初期建议 1.5 - 4.0
+    parser.add_argument("--num-classes", type=int, default=45) 
+    parser.add_argument("--target-class-id", type=int, default=39, help="Class ID to generate (e.g., 0 for airplane, 39 for stadium)")
+    parser.add_argument("--cfg-scale",  type=float, default=1.5) 
     parser.add_argument("--num-sampling-steps", type=int, default=250)
     parser.add_argument("--global-seed", type=int, default=0)
     parser.add_argument("--tf32", action="store_true", default=True)
-    parser.add_argument("--ckpt", type=str, required=True, help="Path to your checkpoint") # 必填
+    parser.add_argument("--ckpt", type=str, required=True, help="Path to your checkpoint")
     args = parser.parse_args()
     main(args)

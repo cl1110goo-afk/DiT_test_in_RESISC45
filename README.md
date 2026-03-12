@@ -1,146 +1,57 @@
-## Scalable Diffusion Models with Transformers (DiT)<br><sub>Official PyTorch Implementation</sub>
+# Diffusion Transformer (DiT) Exploration on Remote Sensing Imagery
 
-### [Paper](http://arxiv.org/abs/2212.09748) | [Project Page](https://www.wpeebles.com/DiT) | Run DiT-XL/2 [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/wpeebles/DiT) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](http://colab.research.google.com/github/facebookresearch/DiT/blob/main/run_DiT.ipynb) <a href="https://replicate.com/arielreplicate/scalable_diffusion_with_transformers"><img src="https://replicate.com/arielreplicate/scalable_diffusion_with_transformers/badge"></a>
+### [Original Paper](http://arxiv.org/abs/2212.09748) | [Original DiT Project Page](https://www.wpeebles.com/DiT) 
 
-![DiT samples](visuals/sample_grid_0.png)
+This repository contains the PyTorch implementation, custom data loaders, and training configurations for adapting Diffusion Transformers (DiTs) to large-scale geographical and structural image datasets. 
 
-This repo contains PyTorch model definitions, pre-trained weights and training/sampling code for our paper exploring 
-diffusion models with transformers (DiTs). You can find more visualizations on our [project page](https://www.wpeebles.com/DiT).
+Building upon the foundational DiT architecture, this project specifically leverages the **NWPU-RESISC45** dataset (a large-scale benchmark for remote sensing image scene classification) to explore the generative capabilities of vision transformers on complex aerial imagery. The ultimate goal of this exploration is to set a preliminary technical foundation for generating high-fidelity training data for **Structural Digital Twins**.
 
-> [**Scalable Diffusion Models with Transformers**](https://www.wpeebles.com/DiT)<br>
-> [William Peebles](https://www.wpeebles.com), [Saining Xie](https://www.sainingxie.com)
-> <br>UC Berkeley, New York University<br>
+## 🌟 Core Implementations & Modifications
 
-We train latent diffusion models, replacing the commonly-used U-Net backbone with a transformer that operates on 
-latent patches. We analyze the scalability of our Diffusion Transformers (DiTs) through the lens of forward pass 
-complexity as measured by Gflops. We find that DiTs with higher Gflops---through increased transformer depth/width or
-increased number of input tokens---consistently have lower FID. In addition to good scalability properties, our 
-DiT-XL/2 models outperform all prior diffusion models on the class-conditional ImageNet 512×512 and 256×256 benchmarks, 
-achieving a state-of-the-art FID of 2.27 on the latter.
+Unlike standard image synthesis (e.g., ImageNet), generating remote sensing and structural imagery requires handling unique spatial complexities. This repository includes the following custom modifications:
 
-This repository contains:
+* **Custom Data Pipeline:** Developed tailored `Dataset` and `DataLoader` Python scripts specifically designed to parse, process, and load the NWPU-RESISC45 dataset efficiently.
+* **Architecture Adaptation:** Adapted the state-of-the-art generative AI architecture to handle the specific latent features of large-scale geographical images.
+* **Environment & Training Loop:** Configured a local training environment with a managed training loop optimized for testing generative capabilities on structural datasets.
 
-* 🪐 A simple PyTorch [implementation](models.py) of DiT
-* ⚡️ Pre-trained class-conditional DiT models trained on ImageNet (512x512 and 256x256)
-* 💥 A self-contained [Hugging Face Space](https://huggingface.co/spaces/wpeebles/DiT) and [Colab notebook](http://colab.research.google.com/github/facebookresearch/DiT/blob/main/run_DiT.ipynb) for running pre-trained DiT-XL/2 models
-* 🛸 A DiT [training script](train.py) using PyTorch DDP
-
-An implementation of DiT directly in Hugging Face `diffusers` can also be found [here](https://github.com/huggingface/diffusers/blob/main/docs/source/en/api/pipelines/dit.mdx).
-
-
-## Setup
+## ⚙️ Setup
 
 First, download and set up the repo:
 
 ```bash
-git clone https://github.com/facebookresearch/DiT.git
-cd DiT
+git clone [https://github.com/your-username/DiT_test_in_RESISC45.git](https://github.com/your-username/DiT_test_in_RESISC45.git)
+cd DiT_test_in_RESISC45
 ```
 
-We provide an [`environment.yml`](environment.yml) file that can be used to create a Conda environment. If you only want 
-to run pre-trained models locally on CPU, you can remove the `cudatoolkit` and `pytorch-cuda` requirements from the file.
+We provide an `environment.yml` file that can be used to create a Conda environment.
 
 ```bash
 conda env create -f environment.yml
 conda activate DiT
 ```
 
+## 🚀 Training on NWPU-RESISC45
 
-## Sampling [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/wpeebles/DiT) [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](http://colab.research.google.com/github/facebookresearch/DiT/blob/main/run_DiT.ipynb)
-![More DiT samples](visuals/sample_grid_1.png)
-
-**Pre-trained DiT checkpoints.** You can sample from our pre-trained DiT models with [`sample.py`](sample.py). Weights for our pre-trained DiT model will be 
-automatically downloaded depending on the model you use. The script has various arguments to switch between the 256x256
-and 512x512 models, adjust sampling steps, change the classifier-free guidance scale, etc. For example, to sample from
-our 512x512 DiT-XL/2 model, you can use:
+We provide a modified training script in `train.py`. This script integrates the custom dataloaders for the remote sensing dataset. To launch training with `N` GPUs on one node:
 
 ```bash
-python sample.py --image-size 512 --seed 1
+torchrun --nnodes=1 --nproc_per_node=N train.py --model DiT-XL/2 --data-path /path/to/NWPU-RESISC45
 ```
+*Note: Ensure your `--data-path` points to the correctly formatted directory of the NWPU-RESISC45 dataset.*
 
-For convenience, our pre-trained DiT models can be downloaded directly here as well:
+## 🖼️ Sampling
 
-| DiT Model     | Image Resolution | FID-50K | Inception Score | Gflops | 
-|---------------|------------------|---------|-----------------|--------|
-| [XL/2](https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-256x256.pt) | 256x256          | 2.27    | 278.24          | 119    |
-| [XL/2](https://dl.fbaipublicfiles.com/DiT/models/DiT-XL-2-512x512.pt) | 512x512          | 3.04    | 240.82          | 525    |
+You can sample from your fine-tuned custom DiT models using the `sample.py` script. Simply use the `--ckpt` argument to point to your saved weights. 
 
-
-**Custom DiT checkpoints.** If you've trained a new DiT model with [`train.py`](train.py) (see [below](#training-dit)), you can add the `--ckpt`
-argument to use your own checkpoint instead. For example, to sample from the EMA weights of a custom 
-256x256 DiT-L/4 model, run:
+For example, to sample from the EMA weights of your custom 256x256 model, run:
 
 ```bash
-python sample.py --model DiT-L/4 --image-size 256 --ckpt /path/to/model.pt
+python sample.py --model DiT-XL/2 --image-size 256 --ckpt /path/to/your/custom_model.pt
 ```
 
+## 🙏 Acknowledgments
 
-## Training DiT
-
-We provide a training script for DiT in [`train.py`](train.py). This script can be used to train class-conditional 
-DiT models, but it can be easily modified to support other types of conditioning. To launch DiT-XL/2 (256x256) training with `N` GPUs on 
-one node:
-
-```bash
-torchrun --nnodes=1 --nproc_per_node=N train.py --model DiT-XL/2 --data-path /path/to/imagenet/train
-```
-
-### PyTorch Training Results
-
-We've trained DiT-XL/2 and DiT-B/4 models from scratch with the PyTorch training script
-to verify that it reproduces the original JAX results up to several hundred thousand training iterations. Across our experiments, the PyTorch-trained models give 
-similar (and sometimes slightly better) results compared to the JAX-trained models up to reasonable random variation. Some data points:
-
-| DiT Model  | Train Steps | FID-50K<br> (JAX Training) | FID-50K<br> (PyTorch Training) | PyTorch Global Training Seed |
-|------------|-------------|----------------------------|--------------------------------|------------------------------|
-| XL/2       | 400K        | 19.5                       | **18.1**                       | 42                           |
-| B/4        | 400K        | **68.4**                   | 68.9                           | 42                           |
-| B/4        | 400K        | 68.4                       | **68.3**                       | 100                          |
-
-These models were trained at 256x256 resolution; we used 8x A100s to train XL/2 and 4x A100s to train B/4. Note that FID 
-here is computed with 250 DDPM sampling steps, with the `mse` VAE decoder and without guidance (`cfg-scale=1`). 
-
-**TF32 Note (important for A100 users).** When we ran the above tests, TF32 matmuls were disabled per PyTorch's defaults. 
-We've enabled them at the top of `train.py` and `sample.py` because it makes training and sampling way way way faster on 
-A100s (and should for other Ampere GPUs too), but note that the use of TF32 may lead to some differences compared to 
-the above results.
-
-### Enhancements
-Training (and sampling) could likely be sped-up significantly by:
-- [ ] using [Flash Attention](https://github.com/HazyResearch/flash-attention) in the DiT model
-- [ ] using `torch.compile` in PyTorch 2.0
-
-Basic features that would be nice to add:
-- [ ] Monitor FID and other metrics
-- [ ] Generate and save samples from the EMA model periodically
-- [ ] Resume training from a checkpoint
-- [ ] AMP/bfloat16 support
-
-**🔥 Feature Update** Check out this repository at https://github.com/chuanyangjin/fast-DiT to preview a selection of training speed acceleration and memory saving features including gradient checkpointing, mixed precision training and pre-extrated VAE features. With these advancements, we have achieved a training speed of 0.84 steps/sec for DiT-XL/2 using just a single A100 GPU.
-
-## Evaluation (FID, Inception Score, etc.)
-
-We include a [`sample_ddp.py`](sample_ddp.py) script which samples a large number of images from a DiT model in parallel. This script 
-generates a folder of samples as well as a `.npz` file which can be directly used with [ADM's TensorFlow
-evaluation suite](https://github.com/openai/guided-diffusion/tree/main/evaluations) to compute FID, Inception Score and
-other metrics. For example, to sample 50K images from our pre-trained DiT-XL/2 model over `N` GPUs, run:
-
-```bash
-torchrun --nnodes=1 --nproc_per_node=N sample_ddp.py --model DiT-XL/2 --num-fid-samples 50000
-```
-
-There are several additional options; see [`sample_ddp.py`](sample_ddp.py) for details. 
-
-
-## Differences from JAX
-
-Our models were originally trained in JAX on TPUs. The weights in this repo are ported directly from the JAX models. 
-There may be minor differences in results stemming from sampling with different floating point precisions. We re-evaluated 
-our ported PyTorch weights at FP32, and they actually perform marginally better than sampling in JAX (2.21 FID 
-versus 2.27 in the paper).
-
-
-## BibTeX
+This project is built upon the phenomenal work by William Peebles and Saining Xie in their paper [Scalable Diffusion Models with Transformers](https://arxiv.org/abs/2212.09748). 
 
 ```bibtex
 @article{Peebles2022DiT,
@@ -150,14 +61,3 @@ versus 2.27 in the paper).
   journal={arXiv preprint arXiv:2212.09748},
 }
 ```
-
-
-## Acknowledgments
-We thank Kaiming He, Ronghang Hu, Alexander Berg, Shoubhik Debnath, Tim Brooks, Ilija Radosavovic and Tete Xiao for helpful discussions. 
-William Peebles is supported by the NSF Graduate Research Fellowship.
-
-This codebase borrows from OpenAI's diffusion repos, most notably [ADM](https://github.com/openai/guided-diffusion).
-
-
-## License
-The code and model weights are licensed under CC-BY-NC. See [`LICENSE.txt`](LICENSE.txt) for details.

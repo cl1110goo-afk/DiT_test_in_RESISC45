@@ -1,8 +1,4 @@
-# train_resume_fast.py
-# 8x3090 极速续训版：集成 RAM Cache, AMP, TF32, Compile
-
 import torch
-# 🔥 1. 开启 TF32 加速
 torch.backends.cuda.matmul.allow_tf32 = True
 torch.backends.cudnn.allow_tf32 = True
 
@@ -20,28 +16,25 @@ from collections import OrderedDict
 from models import DiT_models
 from diffusion import create_diffusion
 
-#################################################################################
-#                           极速内存数据集 (RAM Cache)                          #
-#################################################################################
 
 class CachedLatentDataset(Dataset):
     def __init__(self, features_dir):
         super().__init__()
         self.files = sorted(glob(os.path.join(features_dir, "**", "*.pt"), recursive=True))
         
-        # 建立类别映射字典
+        # build class mapping from folder names
         all_folders = sorted([d for d in os.listdir(features_dir) if os.path.isdir(os.path.join(features_dir, d))])
         self.class_to_idx = {name: i for i, name in enumerate(all_folders)}
         
         if dist.get_rank() == 0:
-            print(f"🚀 [RAM Cache] Pre-loading {len(self.files)} latents. Classes: {len(all_folders)}")
+            print(f"[RAM Cache] Pre-loading {len(self.files)} latents across {len(all_folders)} classes.")
         
         self.latents = []
         self.labels = []
         for path in self.files:
             latent = torch.load(path, map_location="cpu")
             folder_name = path.split(os.sep)[-2]
-            label = self.class_to_idx[folder_name] # 关键修复：字符串转数字
+            label = self.class_to_idx[folder_name] # map folder string to int idx
             self.latents.append(latent)
             self.labels.append(label)
 
@@ -87,7 +80,7 @@ def main(args):
     device = rank % torch.cuda.device_count()
     torch.cuda.set_device(device)
     
-    # 建立新的实验文件夹 (022-...)
+    # setup experiment directory
     if rank == 0:
         os.makedirs(args.results_dir, exist_ok=True)
         experiment_index = len(glob(f"{args.results_dir}/*"))
@@ -96,54 +89,55 @@ def main(args):
         checkpoint_dir = f"{experiment_dir}/checkpoints"
         os.makedirs(checkpoint_dir, exist_ok=True)
         logger = create_logger(experiment_dir)
-        logger.info(f"Experiment directory: {experiment_dir}")
+        logger.info(f"Experiment directory created at: {experiment_dir}")
     else:
         logger = create_logger(None)
 
-    # 1. 初始化模型
+    # init models
     latent_size = args.image_size // 8
     model = DiT_models[args.model](input_size=latent_size, num_classes=args.num_classes).to(device)
     ema = deepcopy(model).to(device)
     
-    # 2. 🔥 核心：加载 Checkpoint (续训逻辑)
+    # load checkpoint for resume
     start_step = 0
     if args.resume:
-        if rank == 0: logger.info(f"🚀 Resuming from: {args.resume}")
+        if rank == 0: logger.info(f"Resuming training from checkpoint: {args.resume}")
         ckpt = torch.load(args.resume, map_location="cpu")
         
-        # 加载 Model
-        model.load_state_dict(ckpt["model"], strict=True) # 既然是续训自己的模型，strict=True 更安全
-        # 加载 EMA
+        # load model weights
+        model.load_state_dict(ckpt["model"], strict=True) 
+        
+        # load ema weights
         if "ema" in ckpt:
-            if rank == 0: logger.info("✅ EMA weights loaded.")
+            if rank == 0: logger.info("EMA weights loaded successfully.")
             ema.load_state_dict(ckpt["ema"])
             
-        # 尝试恢复步数 (根据文件名，例如 0004000.pt)
+        # parse step count from filename
         try:
             basename = os.path.basename(args.resume)
             start_step = int(basename.replace(".pt", ""))
-            if rank == 0: logger.info(f"🔄 Continuing from step: {start_step}")
+            if rank == 0: logger.info(f"Resuming from global step: {start_step}")
         except:
-            if rank == 0: logger.info("⚠️ Could not parse step count from filename, starting count from 0.")
+            if rank == 0: logger.info("Warning: Could not parse step count from filename. Starting from 0.")
             start_step = 0
 
-    # 3. 🔥 编译加速 (PyTorch 2.0+)
+    # torch.compile for training speedup (PyTorch 2.0+)
     if hasattr(torch, 'compile'):
-        if rank == 0: logger.info("⚡️ Enabling torch.compile (Fused Kernels)...")
+        if rank == 0: logger.info("Enabling torch.compile...")
         model = torch.compile(model)
     
     model = DDP(model, device_ids=[rank])
     
-    # 4. 优化器 & 混合精度
+    # optimizer & mixed precision
     opt = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=0)
-    # 如果你也想加载优化器状态（完全复原），取消下面注释。
-    # 但改变 Batch Size 后建议重置优化器，所以这里默认不加载 opt state。
+    # note: uncomment below if you want to resume optimizer state, 
+    # but usually better to reset if batch size changes
     # if "opt" in ckpt: opt.load_state_dict(ckpt["opt"])
 
-    scaler = torch.cuda.amp.GradScaler() # FP16 混合精度管理器
+    scaler = torch.cuda.amp.GradScaler() 
     diffusion = create_diffusion(timestep_respacing="") 
     
-    # 5. 加载数据 (RAM Cache)
+    # dataset & dataloader
     dataset = CachedLatentDataset(args.features_dir)
     sampler = DistributedSampler(dataset, num_replicas=dist.get_world_size(), rank=rank, shuffle=True, seed=args.global_seed)
     loader = DataLoader(
@@ -151,7 +145,7 @@ def main(args):
         batch_size=int(args.global_batch_size // dist.get_world_size()),
         shuffle=False,
         sampler=sampler,
-        num_workers=0, # RAM 模式必须为 0
+        num_workers=0, # must be 0 for RAM cache
         pin_memory=True,
         drop_last=True
     )
@@ -162,7 +156,7 @@ def main(args):
     train_steps = start_step
     start_time = time()
     
-    if rank == 0: logger.info(f"🔥 Training Start. Global Batch Size: {args.global_batch_size}")
+    if rank == 0: logger.info(f"Training started. Global batch size: {args.global_batch_size}")
 
     for epoch in range(args.epochs):
         sampler.set_epoch(epoch)
@@ -174,13 +168,14 @@ def main(args):
             t = torch.randint(0, diffusion.num_timesteps, (x.shape[0],), device=device)
             model_kwargs = dict(y=y)
 
-            # 🔥 AMP 混合精度前向
+            # forward pass with AMP
             with torch.cuda.amp.autocast():
                 loss_dict = diffusion.training_losses(model, x, t, model_kwargs)
                 loss = loss_dict["loss"].mean()
 
             opt.zero_grad()
-            # 🔥 AMP 混合精度反向
+            
+            # backward pass with AMP
             scaler.scale(loss).backward()
             scaler.step(opt)
             scaler.update()
@@ -189,7 +184,7 @@ def main(args):
 
             train_steps += 1
             
-            # 日志
+            # logging
             if train_steps % args.log_every == 0:
                 end_time = time()
                 steps_per_sec = args.log_every / (end_time - start_time)
@@ -201,11 +196,11 @@ def main(args):
                     logger.info(f"(step={train_steps:07d}) Loss: {avg_loss:.4f} | Speed: {steps_per_sec:.2f} it/s")
                 start_time = time()
 
-            # 保存
+            # checkpoint saving
             if train_steps % args.ckpt_every == 0:
                 if rank == 0:
                     checkpoint_path = f"{checkpoint_dir}/{train_steps:07d}.pt"
-                    # 解包 DDP 和 compile
+                    # unwrap DDP and compile
                     raw_model = model.module._orig_mod if hasattr(model.module, '_orig_mod') else model.module
                     checkpoint = {
                         "model": raw_model.state_dict(),
@@ -214,7 +209,7 @@ def main(args):
                         "args": args
                     }
                     torch.save(checkpoint, checkpoint_path)
-                    logger.info(f"💾 Saved checkpoint: {checkpoint_path}")
+                    logger.info(f"Saved checkpoint: {checkpoint_path}")
                 dist.barrier()
 
     cleanup()
@@ -230,7 +225,7 @@ if __name__ == "__main__":
     parser.add_argument("--global-batch-size", type=int, default=64) # 3090 开 128 没问题
     parser.add_argument("--global-seed", type=int, default=0)
     parser.add_argument("--log-every", type=int, default=50)
-    parser.add_argument("--ckpt-every", type=int, default=2000) # 每 2000 步存一次
+    parser.add_argument("--ckpt-every", type=int, default=2000) 
     parser.add_argument("--resume", type=str, required=True, help="Path to the checkpoint to resume from")
     
     args = parser.parse_args()

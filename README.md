@@ -24,7 +24,7 @@ Unlike standard image synthesis (e.g., ImageNet), generating remote sensing and 
 First, download and set up the repo:
 
 ```bash
-git clone https://github.com/your-username/DiT_test_in_RESISC45.git
+git clone https://github.com/cl1110goo-afk/DiT_test_in_RESISC45.git
 cd DiT_test_in_RESISC45
 ```
 
